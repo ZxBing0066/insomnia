@@ -6,11 +6,13 @@ import electron, { app, BrowserWindow, session } from 'electron';
 import contextMenu from 'electron-context-menu';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 
+import { initDatabaseBuckets } from '~/common/database/database.main';
+// import { initDatabaseBuckets } from '~/common/database/database.main-without-seperate-process';
 import { registerLLMConfigServiceAPI } from '~/main/llm-config-service';
 
 import { userDataFolder } from '../config/config.json';
 import { getAppVersion, getProductName, isDevelopment, isMac } from './common/constants';
-import { database } from './common/database';
+import { configureInitDbBuckets, database } from './common/database';
 import { SegmentEvent, trackSegmentEvent } from './main/analytics';
 import { registerInsomniaProtocols } from './main/api.protocol';
 import { backupIfNewerVersionAvailable } from './main/backup';
@@ -40,6 +42,9 @@ const dataPath =
   process.env.INSOMNIA_DATA_PATH ||
   path.join(app.getPath('userData'), '../', isDevelopment() ? 'insomnia-app' : userDataFolder);
 app.setPath('userData', dataPath);
+
+// Configure database client with main process factory
+configureInitDbBuckets(initDatabaseBuckets);
 
 initializeLogging();
 

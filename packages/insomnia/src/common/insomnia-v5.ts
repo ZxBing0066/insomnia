@@ -487,7 +487,11 @@ export async function getInsomniaV5DataExport({
       throw new Error('Workspace not found');
     }
     const exportableTypes = Object.values(MODELS_BY_EXPORT_TYPE);
+
+    const id = Math.random().toString(36).slice(2, 15);
+    // console.time('getWithDescendants' + id);
     const workspaceDescendants = await database.getWithDescendants(workspace, exportableTypes);
+    // console.timeEnd('getWithDescendants' + id);
 
     const exportableResources = workspaceDescendants.filter(resource => {
       if (exportableTypes.includes(resource.type)) {

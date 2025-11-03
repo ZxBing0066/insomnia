@@ -18,6 +18,8 @@ export default function handleRequest(
   // If you have middleware enabled:
   // loadContext: unstable_RouterContextProvider
 ) {
+  console.log(process.type, 'handle entry server request', process.mainModule, process.argv);
+
   return new Promise((resolve, reject) => {
     let shellRendered = false;
     const userAgent = request.headers.get('user-agent');

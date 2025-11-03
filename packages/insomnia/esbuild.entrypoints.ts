@@ -73,6 +73,19 @@ export default async function build(options: Options) {
     },
   };
 
+  const dbProcessBuildOptions: BuildOptions = {
+    entryPoints: ['./src/entry.db-process.ts'],
+    outfile: path.join(outdir, 'entry.db-process.min.js'),
+    target: 'esnext',
+    bundle: true,
+    platform: 'node',
+    sourcemap: true,
+    format: 'cjs',
+    loader: {
+      '.node': 'copy',
+    },
+  };
+
   const mainBuildOptions: BuildOptions = {
     entryPoints: ['./src/entry.main.ts'],
     outfile: path.join(outdir, 'entry.main.min.js'),
@@ -185,7 +198,8 @@ export default async function build(options: Options) {
   const hiddenBrowserWindow = esbuild.build(hiddenBrowserWindowBuildOptions);
   const hiddenBrowserWindowPreload = esbuild.build(hiddenBrowserWindowPreloadBuildOptions);
   const main = esbuild.build(mainBuildOptions);
-  return Promise.all([main, preload, hiddenBrowserWindow, hiddenBrowserWindowPreload]).catch(err => {
+  const dbProcess = esbuild.build(dbProcessBuildOptions);
+  return Promise.all([main, preload, hiddenBrowserWindow, hiddenBrowserWindowPreload, dbProcess]).catch(err => {
     console.error('[Build] Build failed:', err);
   });
 }

@@ -1,17 +1,8 @@
 // This file could be imported by both main and renderer processes, so it should be written in a way that works in both contexts.
 
-/* eslint-disable prefer-rest-params -- don't want to change ...arguments usage for these sensitive functions without more testing */
-import fsPath from 'node:path';
-
-import NeDB from '@seald-io/nedb';
 import electron from 'electron';
-import { v4 as uuidv4 } from 'uuid';
 
-import type { ApiSpec } from '~/models/api-spec';
-import type { CaCertificate } from '~/models/ca-certificate';
-import type { ClientCertificate } from '~/models/client-certificate';
-import type { CloudProviderCredential } from '~/models/cloud-credential';
-import type { WorkspaceMeta } from '~/models/workspace-meta';
+import type { DatabaseBucket, DatabaseBucketsFactory, DataBaseOptions } from '~/common/database/interface';
 
 import { mustGetModel } from '../models';
 import type { CookieJar } from '../models/cookie-jar';
@@ -21,6 +12,14 @@ import type { AllTypes, BaseModel } from '../models/index';
 import * as models from '../models/index';
 import type { Workspace } from '../models/workspace';
 import { generateId } from './misc';
+
+let databaseBuckets: Record<AllTypes, DatabaseBucket> = {} as Record<AllTypes, DatabaseBucket>;
+let dbBucketsFactory: DatabaseBucketsFactory = () => {
+  throw new Error('Database factory not configured');
+};
+export const configureInitDbBuckets = (_databaseBucketsFactory: DatabaseBucketsFactory) => {
+  dbBucketsFactory = _databaseBucketsFactory;
+};
 
 export interface Operation {
   upsert?: BaseModel[];
@@ -41,9 +40,6 @@ export type Query<T extends BaseModel = BaseModel> = {
 export type ChangeType = 'insert' | 'update' | 'remove';
 export const database = {
   batchModifyDocs: async function ({ upsert = [], remove = [] }: Operation) {
-    if (process.type === 'renderer') {
-      return _send<void>('batchModifyDocs', ...arguments);
-    }
     const flushId = await database.bufferChanges();
 
     // Perform from least to most dangerous
@@ -56,9 +52,6 @@ export const database = {
   /** buffers database changes and returns a buffer id, automatically call flushChanges in millis,
    * bufferChanges and flushChanges should be called in pair every time documents changes are made to trigger change listeners */
   bufferChanges: async function (millis = 1000) {
-    if (process.type === 'renderer') {
-      return _send<number>('bufferChanges', ...arguments);
-    }
     bufferingChanges = true;
     setTimeout(database.flushChanges, millis);
     return ++bufferChangesId;
@@ -66,19 +59,13 @@ export const database = {
 
   /** buffers database changes and returns a buffer id */
   bufferChangesIndefinitely: async function () {
-    if (process.type === 'renderer') {
-      return _send<number>('bufferChangesIndefinitely', ...arguments);
-    }
     bufferingChanges = true;
     return ++bufferChangesId;
   },
 
   /** return count num of documents matching query */
   count: async function <T extends BaseModel>(type: AllTypes, query: Query<T> = {}) {
-    if (process.type === 'renderer') {
-      return _send<number>('count', ...arguments);
-    }
-    return nedbBucket[type].countAsync(query);
+    return databaseBuckets[type].count(query);
   },
 
   docCreate: async <T extends BaseModel>(type: AllTypes, ...patches: Partial<T>[]) => {
@@ -110,9 +97,6 @@ export const database = {
 
   /** duplicate doc and its descendents recursively */
   duplicate: async function <T extends BaseModel>(originalDoc: T, patch: Partial<T> = {}) {
-    if (process.type === 'renderer') {
-      return _send<T>('duplicate', ...arguments);
-    }
     const flushId = await database.bufferChanges();
 
     async function next<T extends BaseModel>(docToCopy: T, patch: Partial<T>) {
@@ -127,9 +111,9 @@ export const database = {
       // 1. Copy the doc
       const newDoc = { ...docToCopy, ...patch, ...overrides };
 
-      const createdDoc = await nedbBucket[docToCopy.type].insertAsync(newDoc);
+      const createdDoc = await databaseBuckets[docToCopy.type].insert(newDoc);
       // 2. Get all the children
-      for (const type of Object.keys(nedbBucket) as AllTypes[]) {
+      for (const type of Object.keys(databaseBuckets) as AllTypes[]) {
         // Note: We never want to duplicate a response
         if (!models.canDuplicate(type)) {
           continue;
@@ -152,10 +136,7 @@ export const database = {
     query: Query<T> | string = {},
     sort: Record<string, any> = { created: 1 },
   ): Promise<T | undefined> {
-    if (process.type === 'renderer') {
-      return _send<T>('findOne', ...arguments);
-    }
-    const doc = await nedbBucket[type].findOneAsync<T>(query).sort(sort);
+    const doc = await databaseBuckets[type].findOne<T>(query, sort);
     if (doc === null) {
       return undefined;
     }
@@ -168,14 +149,11 @@ export const database = {
     sort: Record<string, any> = { created: 1 },
     limit = 0,
   ): Promise<T[]> {
-    if (process.type === 'renderer') {
-      return _send<T[]>('find', ...arguments);
-    }
-    if (!nedbBucket[type]) {
+    if (!databaseBuckets[type]) {
       console.warn(`[db] No collection for type "${type}"`);
       return [];
     }
-    const docs = await nedbBucket[type].findAsync<T>(query).sort(sort).limit(limit);
+    const docs = await databaseBuckets[type].find<T>(query, sort, limit);
     // TODO: create a db init phase for migrations rather than doing it on every find.
     const migrated = [];
     for (const rawDoc of docs) {
@@ -186,10 +164,6 @@ export const database = {
 
   /** trigger all changeListeners */
   flushChanges: async function (id = 0, fake = false) {
-    if (process.type === 'renderer') {
-      return _send<void>('flushChanges', ...arguments);
-    }
-
     // Only flush if ID is 0 or the current flush ID is the same as passed
     if (id !== 0 && bufferChangesId !== id) {
       return;
@@ -224,197 +198,24 @@ export const database = {
   },
 
   /** init in main process */
-  init: async (config: NeDB.DataStoreOptions = {}, forceReset = false) => {
+  init: async (config: DataBaseOptions = {}, forceReset = false) => {
     if (forceReset) {
       changeListeners = [];
-      nedbBucket = {} as Record<AllTypes, NeDB>;
+      databaseBuckets = {} as Record<AllTypes, DatabaseBucket>;
     }
-    const defaultConfig: NeDB.DataStoreOptions = {
+    const defaultConfig: DataBaseOptions = {
       autoload: true,
       corruptAlertThreshold: 0.9,
       ...config,
     };
-    const dbPath = process.env['INSOMNIA_DATA_PATH'] || electron.app.getPath('userData');
 
-    nedbBucket = {
-      ApiSpec: new NeDB<ApiSpec>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.ApiSpec.db'),
-      }),
-      CaCertificate: new NeDB<CaCertificate>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.CaCertificate.db'),
-      }),
-      ClientCertificate: new NeDB<ClientCertificate>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.ClientCertificate.db'),
-      }),
-      CloudCredential: new NeDB<CloudProviderCredential>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.CloudCredential.db'),
-      }),
-      CookieJar: new NeDB<CookieJar>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.CookieJar.db'),
-      }),
-      Environment: new NeDB<Environment>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Environment.db'),
-      }),
-      GitCredentials: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.GitCredentials.db'),
-      }),
-      GitRepository: new NeDB<GitRepository>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.GitRepository.db'),
-      }),
-      GrpcRequest: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.GrpcRequest.db'),
-      }),
-      GrpcRequestMeta: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.GrpcRequestMeta.db'),
-      }),
-      MockRoute: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.MockRoute.db'),
-      }),
-      MockServer: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.MockServer.db'),
-      }),
-      McpRequest: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.McpRequest.db'),
-      }),
-      McpResponse: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.McpResponse.db'),
-      }),
-      McpPayload: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.McpPayload.db'),
-      }),
-      OAuth2Token: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.OAuth2Token.db'),
-      }),
-      PluginData: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.PluginData.db'),
-      }),
-      Project: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Project.db'),
-      }),
-      ProtoDirectory: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.ProtoDirectory.db'),
-      }),
-      ProtoFile: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.ProtoFile.db'),
-      }),
-      Request: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Request.db'),
-      }),
-      RequestGroup: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.RequestGroup.db'),
-      }),
-      RequestGroupMeta: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.RequestGroupMeta.db'),
-      }),
-      RequestMeta: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.RequestMeta.db'),
-      }),
-      RequestVersion: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.RequestVersion.db'),
-      }),
-      Response: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Response.db'),
-      }),
-      RunnerTestResult: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.RunnerTestResult.db'),
-      }),
-      Settings: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Settings.db'),
-      }),
-      SocketIOPayload: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.SocketIOPayload.db'),
-      }),
-      SocketIORequest: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.SocketIORequest.db'),
-      }),
-      SocketIOResponse: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.SocketIOResponse.db'),
-      }),
-      Stats: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Stats.db'),
-      }),
-      UnitTest: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.UnitTest.db'),
-      }),
-      UnitTestResult: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.UnitTestResult.db'),
-      }),
-      UnitTestSuite: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.UnitTestSuite.db'),
-      }),
-      UserSession: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.UserSession.db'),
-      }),
-      WebSocketPayload: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.WebSocketPayload.db'),
-      }),
-      WebSocketRequest: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.WebSocketRequest.db'),
-      }),
-      WebSocketResponse: new NeDB({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.WebSocketResponse.db'),
-      }),
-      Workspace: new NeDB<Workspace>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.Workspace.db'),
-      }),
-      WorkspaceMeta: new NeDB<WorkspaceMeta>({
-        ...defaultConfig,
-        filename: fsPath.join(dbPath, 'insomnia.WorkspaceMeta.db'),
-      }),
-    };
-
-    electron.ipcMain.on('db.fn', async (e, fnName, replyChannel, ...args) => {
-      try {
-        // @ts-expect-error -- mapping unsoundness
-        const result = await database[fnName](...args);
-        e.sender.send(replyChannel, null, result);
-      } catch (err) {
-        e.sender.send(replyChannel, {
-          message: err.message,
-          stack: err.stack,
-        });
-      }
-    });
+    // Initialize the database service (for main process)
+    try {
+      databaseBuckets = await dbBucketsFactory(defaultConfig);
+      console.log({ dbBuckets: databaseBuckets });
+    } catch (error) {
+      console.warn('[database] Failed to initialize database service:', error);
+    }
 
     // NOTE: Only repair the DB if we're not running in memory. Repairing here causes tests to hang indefinitely for some reason.
     // TODO: Figure out why this makes tests hang
@@ -424,11 +225,8 @@ export const database = {
   },
 
   insert: async function <T extends BaseModel>(doc: T) {
-    if (process.type === 'renderer') {
-      return _send<T>('insert', ...arguments);
-    }
     const docWithDefaults = await models.initModel<T>(doc.type, doc);
-    const newDoc = await nedbBucket[doc.type].insertAsync(docWithDefaults);
+    const newDoc = await databaseBuckets[doc.type].insert(docWithDefaults);
     notifyOfChange('insert', newDoc);
     return newDoc;
   },
@@ -439,10 +237,6 @@ export const database = {
 
   /** remove doc and its descendants */
   remove: async function <T extends BaseModel>(doc: T) {
-    if (process.type === 'renderer') {
-      return _send<void>('remove', ...arguments);
-    }
-
     const flushId = await database.bufferChanges();
 
     const docs = await database.getWithDescendants(doc);
@@ -451,11 +245,9 @@ export const database = {
 
     // Don't really need to wait for this to be over;
     types.map(t =>
-      nedbBucket[t].remove(
+      databaseBuckets[t].remove(
         {
-          _id: {
-            $in: docIds,
-          },
+          $in: docIds,
         },
         {
           multi: true,
@@ -468,9 +260,6 @@ export const database = {
   },
 
   removeWhere: async function <T extends BaseModel>(type: AllTypes, query: Query<T>) {
-    if (process.type === 'renderer') {
-      return _send<void>('removeWhere', ...arguments);
-    }
     const flushId = await database.bufferChanges();
 
     for (const doc of await database.find<T>(type, query)) {
@@ -480,11 +269,9 @@ export const database = {
 
       // Don't really need to wait for this to be over;
       types.map(t =>
-        nedbBucket[t].remove(
+        databaseBuckets[t].remove(
           {
-            _id: {
-              $in: docIds,
-            },
+            $in: docIds,
           },
           {
             multi: true,
@@ -499,38 +286,26 @@ export const database = {
 
   /** Removes entries without removing their children */
   unsafeRemove: async function <T extends BaseModel>(doc: T) {
-    if (process.type === 'renderer') {
-      return _send<void>('unsafeRemove', ...arguments);
-    }
-
-    nedbBucket[doc.type].remove({ _id: doc._id });
+    databaseBuckets[doc.type].remove(doc._id);
     notifyOfChange('remove', doc);
   },
 
   update: async function <T extends BaseModel>(doc: T, patches: Partial<T>[] = []) {
-    if (process.type === 'renderer') {
-      return _send<T>('update', ...arguments);
-    }
-
     const docWithDefaults = await models.initModel<T>(doc.type, doc);
-    await nedbBucket[doc.type].updateAsync({ _id: docWithDefaults._id }, docWithDefaults, { upsert: true });
+    await databaseBuckets[doc.type].update(docWithDefaults._id, docWithDefaults, { upsert: true });
     notifyOfChange('update', docWithDefaults, patches);
     return docWithDefaults;
   },
 
   /** get all ancestors of specified types of a document including the original */
   withAncestors: async function <T extends BaseModel>(doc: T | undefined, types: AllTypes[] = []) {
-    if (process.type === 'renderer') {
-      return _send<T[]>('withAncestors', ...arguments);
-    }
-
     if (!doc) {
       return [];
     }
 
     let docsToReturn: T[] = doc ? [doc] : [];
     if (types.length === 0) {
-      types = Object.keys(nedbBucket) as AllTypes[];
+      types = Object.keys(databaseBuckets) as AllTypes[];
     }
     async function next(docs: T[]): Promise<T[]> {
       const foundDocs: T[] = [];
@@ -562,10 +337,6 @@ export const database = {
    * @returns A promise that resolves to an array of documents
    */
   getWithDescendants: async function <T extends BaseModel>(doc: T, types: AllTypes[] = []) {
-    if (process.type === 'renderer') {
-      return _send<T[]>('getWithDescendants', ...arguments);
-    }
-
     if (!doc) return [];
 
     let docsToReturn: BaseModel[] = [doc];
@@ -616,8 +387,6 @@ export const database = {
   },
 };
 
-let nedbBucket: Record<AllTypes, NeDB> = {} as Record<AllTypes, NeDB>;
-
 // ~~~~~~~~~~~~~~~~ //
 // Change Listeners //
 // ~~~~~~~~~~~~~~~~ //
@@ -644,18 +413,6 @@ async function notifyOfChange<T extends BaseModel>(event: ChangeType, doc: T, pa
   if (!bufferingChanges) {
     await database.flushChanges();
   }
-}
-
-// ~~~~~~~ //
-// Helpers //
-// ~~~~~~~ //
-// If you call database.x methods within the render process, you can obtain results by this helper function
-async function _send<T>(fnName: string, ...args: any[]) {
-  return new Promise<T>((resolve, reject) => {
-    const replyChannel = `db.fn.reply:${uuidv4()}`;
-    electron.ipcRenderer.send('db.fn', fnName, replyChannel, ...args);
-    electron.ipcRenderer.once(replyChannel, (_e, err, result: T) => (err ? reject(err) : resolve(result)));
-  });
 }
 
 /**

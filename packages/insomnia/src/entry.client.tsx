@@ -5,6 +5,9 @@ import { startTransition, StrictMode } from 'react';
 import { hydrateRoot } from 'react-dom/client';
 import { HydratedRouter } from 'react-router/dom';
 
+import { configureInitDbBuckets, database } from '~/common/database';
+import { initDatabaseBuckets } from '~/common/database/database.render';
+
 import { migrateFromLocalStorage, type SessionData, setSessionData, setVaultSessionData } from './account/session';
 import { getInsomniaSession, getInsomniaVaultKey, getInsomniaVaultSalt, getSkipOnboarding } from './common/constants';
 import { settings } from './models';
@@ -19,8 +22,11 @@ import { WrapperModal } from './ui/components/modals/wrapper-modal';
 import { initializeSentry } from './ui/sentry';
 import { getInitialEntry } from './utils/router';
 
-initializeSentry();
+// Configure database client with renderer process factory
+configureInitDbBuckets(initDatabaseBuckets);
 
+initializeSentry();
+await database.init();
 await initPlugins();
 
 await migrateFromLocalStorage();

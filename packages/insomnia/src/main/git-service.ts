@@ -787,11 +787,11 @@ export const cloneGitRepoAction = async ({
           _id: { $in: insomniaFilesIds },
         });
 
-        if (existingWorkspaces.length > 0) {
-          return {
-            errors: ['The repository being cloned contains workspaces that already exist in Insomnia.'],
-          };
-        }
+        // if (existingWorkspaces.length > 0) {
+        //   return {
+        //     errors: ['The repository being cloned contains workspaces that already exist in Insomnia.'],
+        //   };
+        // }
       }
       const bufferId = await database.bufferChanges();
 
@@ -1917,8 +1917,12 @@ export const gitStatusAction = async ({
 }): Promise<GitStatusResult> => {
   try {
     const gitRepository = await getGitRepository({ workspaceId, projectId });
+
+    const id = Math.random().toString(36).slice(2, 15);
+    console.time('gitStatusAction' + id);
     const { hasUncommittedChanges, changes } = await getGitChanges(GitVCS);
     const localChanges = changes.staged.length + changes.unstaged.length;
+    console.timeEnd('gitStatusAction' + id);
 
     await models.gitRepository.update(gitRepository, {
       hasUncommittedChanges,
