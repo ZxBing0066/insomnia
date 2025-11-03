@@ -1,6 +1,6 @@
 // This file could be imported by both main and renderer processes, so it should be written in a way that works in both contexts.
 
-import electron from 'electron';
+// import electron from 'electron';
 
 import type { DatabaseBucket, DatabaseBucketsFactory, DataBaseOptions } from '~/common/database/interface';
 
@@ -187,14 +187,14 @@ export const database = {
       await fn(changes);
     }
     // Notify remote listeners
-    const isMainContext = process.type === 'browser';
-    if (isMainContext) {
-      const windows = electron.BrowserWindow.getAllWindows();
+    // const isMainContext = process.type === 'browser';
+    // if (isMainContext) {
+    //   const windows = electron.BrowserWindow.getAllWindows();
 
-      for (const window of windows) {
-        window.webContents.send('db.changes', changes);
-      }
-    }
+    //   for (const window of windows) {
+    //     window.webContents.send('db.changes', changes);
+    //   }
+    // }
   },
 
   /** init in main process */
@@ -212,16 +212,15 @@ export const database = {
     // Initialize the database service (for main process)
     try {
       databaseBuckets = await dbBucketsFactory(defaultConfig);
-      console.log({ dbBuckets: databaseBuckets });
     } catch (error) {
       console.warn('[database] Failed to initialize database service:', error);
     }
 
     // NOTE: Only repair the DB if we're not running in memory. Repairing here causes tests to hang indefinitely for some reason.
     // TODO: Figure out why this makes tests hang
-    if (!config.inMemoryOnly) {
-      await _repairDatabase();
-    }
+    // if (!config.inMemoryOnly) {
+    //   await _repairDatabase();
+    // }
   },
 
   insert: async function <T extends BaseModel>(doc: T) {

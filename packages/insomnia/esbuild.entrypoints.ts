@@ -81,9 +81,16 @@ export default async function build(options: Options) {
     platform: 'node',
     sourcemap: true,
     format: 'cjs',
-    loader: {
-      '.node': 'copy',
-    },
+  };
+
+  const demoProcessBuildOptions: BuildOptions = {
+    entryPoints: ['./src/entry.demo-utility-process.ts'],
+    outfile: path.join(outdir, 'entry.demo-utility-process.min.js'),
+    target: 'esnext',
+    bundle: true,
+    platform: 'node',
+    sourcemap: true,
+    format: 'cjs',
   };
 
   const mainBuildOptions: BuildOptions = {
@@ -199,9 +206,12 @@ export default async function build(options: Options) {
   const hiddenBrowserWindowPreload = esbuild.build(hiddenBrowserWindowPreloadBuildOptions);
   const main = esbuild.build(mainBuildOptions);
   const dbProcess = esbuild.build(dbProcessBuildOptions);
-  return Promise.all([main, preload, hiddenBrowserWindow, hiddenBrowserWindowPreload, dbProcess]).catch(err => {
-    console.error('[Build] Build failed:', err);
-  });
+  const demoProcess = esbuild.build(demoProcessBuildOptions);
+  return Promise.all([main, preload, hiddenBrowserWindow, hiddenBrowserWindowPreload, dbProcess, demoProcess]).catch(
+    err => {
+      console.error('[Build] Build failed:', err);
+    },
+  );
 }
 
 // Build if ran as a cli script

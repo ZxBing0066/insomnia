@@ -2,11 +2,12 @@ import fs from 'node:fs/promises';
 import inspector from 'node:inspector';
 import path from 'node:path';
 
-import electron, { app, BrowserWindow, session } from 'electron';
+import electron, { app, BrowserWindow, ipcMain, session } from 'electron';
 import contextMenu from 'electron-context-menu';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 
-import { initDatabaseBuckets } from '~/common/database/database.main';
+import { initDatabaseBuckets, initRenderProcessDatabaseConsumer } from '~/common/database/database.main';
+import { initDemo } from '~/common/demo';
 // import { initDatabaseBuckets } from '~/common/database/database.main-without-seperate-process';
 import { registerLLMConfigServiceAPI } from '~/main/llm-config-service';
 
@@ -45,6 +46,7 @@ app.setPath('userData', dataPath);
 
 // Configure database client with main process factory
 configureInitDbBuckets(initDatabaseBuckets);
+initRenderProcessDatabaseConsumer();
 
 initializeLogging();
 
@@ -84,6 +86,17 @@ app.on('ready', async () => {
   registerCurlHandlers();
   registerMcpHandlers();
   registerSecretStorageHandlers();
+  initDemo();
+
+  ipcMain.handle('demo.main.listProjects', async () => {
+    console.debug('[debug]', '[main]', 'handle demo.main.listProjects', Date.now());
+    return models.project.all();
+  });
+
+  ipcMain.handle('demo.main.listWorkspaces', async () => {
+    console.debug('[debug]', '[main]', 'handle demo.main.listWorkspaces', Date.now());
+    return models.workspace.all();
+  });
 
   /**
    * There's no option that prevents Electron from fetching spellcheck dictionaries from Chromium's CDN and passing a non-resolving URL is the only known way to prevent it from fetching.

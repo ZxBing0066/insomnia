@@ -5,7 +5,7 @@ import type { DatabaseBuckets } from '~/common/database/database-buckets';
 import type { DatabaseBucket } from '~/common/database/interface';
 
 const channel = 'db';
-export const initDatabaseBuckets = () => {
+export const initDatabaseBuckets = async () => {
   const _send = async <R>(type: string, fnName: string, ...args: any[]): Promise<R> => {
     return new Promise<R>((resolve, reject) => {
       const replyChannel = `${channel}.reply:${uuidv4()}`;

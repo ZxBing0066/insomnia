@@ -32,11 +32,14 @@ process.parentPort.once('message', async message => {
       args: Parameters<DatabaseBucket[DatabaseBucketOperations]>;
     };
 
+    console.debug('[debug]', '[db-process]', 'onMessage', id, Date.now());
+
     try {
       const dbBucket = buckets[type];
       // console.log(type, func, ...args);
       const result = await (dbBucket[func] as any)(...args);
 
+      console.debug('[debug]', '[db-process]', 'postMessage', id, Date.now());
       port.postMessage({
         type: 'response',
         id,

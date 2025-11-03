@@ -522,6 +522,12 @@ const Component = ({ loaderData }: Route.ComponentProps) => {
                       <Hotkey keyBindings={settings.hotKeyRegistry.preferences_showGeneral} />
                     </Tooltip>
                   </TooltipTrigger>
+                  <NavLink
+                    to={href('/db-demo')}
+                    className="flex h-full items-center justify-center gap-2 px-4 py-1 text-xs text-[--color-font] ring-1 ring-transparent transition-all hover:bg-[--hl-xs] focus:ring-inset focus:ring-[--hl-md] aria-pressed:bg-[--hl-sm]"
+                  >
+                    DB Demo
+                  </NavLink>
                   {!isScratchpadWorkspace && hasUntrackedData && !isMinimal ? (
                     <div>
                       <Button
