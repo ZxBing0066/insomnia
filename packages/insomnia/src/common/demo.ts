@@ -3,12 +3,12 @@ import path from 'node:path';
 import { ipcMain, MessageChannelMain, type MessagePortMain, utilityProcess } from 'electron';
 import { v4 as uuidv4 } from 'uuid';
 
-import { addUtilityProcessDatabaseConsumer } from '~/common/database/database.main';
+// import { addUtilityProcessDatabaseConsumer } from '~/common/database/database.main';
 
 let demoProcess: Electron.UtilityProcess;
 let processPort: MessagePortMain;
 
-export const initDemo = () => {
+export const initDemo = (dbPort: MessagePortMain) => {
   const { port1, port2 } = new MessageChannelMain();
   processPort = port1;
   demoProcess = utilityProcess.fork(path.join(__dirname, 'entry.demo-utility-process.min.js'), [], {
@@ -18,9 +18,10 @@ export const initDemo = () => {
     console.log('Demo utility process exited with code:', code);
   });
 
-  demoProcess.postMessage({}, [port2]);
-  addUtilityProcessDatabaseConsumer(port1);
+  demoProcess.postMessage({}, [port2, dbPort]);
+  // addUtilityProcessDatabaseConsumer(dbPort1);
   port1.start();
+  dbPort.start();
 
   return demoProcess;
 };

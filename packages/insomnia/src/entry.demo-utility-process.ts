@@ -29,10 +29,10 @@ const databaseOperations = {
 };
 
 process.parentPort.once('message', async message => {
-  const [port] = message.ports;
+  const [port, dbPort] = message.ports;
 
   // Configure database client with current utility process factory
-  configureInitDbBuckets(() => initDatabaseBuckets(port));
+  configureInitDbBuckets(() => initDatabaseBuckets(dbPort));
   await database.init();
 
   console.debug('[debug]', '[utility]', 'Database initialized', Date.now());
@@ -40,21 +40,18 @@ process.parentPort.once('message', async message => {
   port.on('message', async messageEvent => {
     try {
       const message = messageEvent.data;
-      const { channel, id, func } = message as {
-        channel?: string;
+      const { id, func } = message as {
         id: string;
         func: keyof typeof databaseOperations;
       };
 
-      if (channel !== 'db') {
-        console.debug('[debug]', '[utility]', `onMessage ${func}`, Date.now());
-        const result = await (databaseOperations[func] as any)();
-        port.postMessage({
-          type: 'response',
-          id,
-          result,
-        } as DatabaseResponse);
-      }
+      console.debug('[debug]', '[utility]', `onMessage ${func}`, Date.now());
+      const result = await (databaseOperations[func] as any)();
+      port.postMessage({
+        type: 'response',
+        id,
+        result,
+      } as DatabaseResponse);
     } catch (error) {
       const message = messageEvent.data;
       port.postMessage({

@@ -46,11 +46,9 @@ function createPromiseResolvers<T>(): [Promise<T>, (value: T | PromiseLike<T>) =
 }
 
 let bucketsProxy: DatabaseBuckets;
+let dbProcess: Electron.UtilityProcess;
 
-export const initDatabaseBuckets: DatabaseBucketsFactory = async (
-  config: DataBaseOptions = {},
-  // consumerProcessesMainPorts: MessagePortMain[] = [],
-) => {
+export const initDatabaseBuckets = async (config: DataBaseOptions = {}, dbPort: MessagePortMain) => {
   const defaultConfig: DataBaseOptions = {
     autoload: true,
     corruptAlertThreshold: 0.9,
@@ -58,7 +56,7 @@ export const initDatabaseBuckets: DatabaseBucketsFactory = async (
   };
 
   const { port1, port2 } = new MessageChannelMain();
-  const dbProcess = utilityProcess.fork(path.join(__dirname, 'entry.db-process.min.js'), [], {
+  dbProcess = utilityProcess.fork(path.join(__dirname, 'entry.db-process.min.js'), [], {
     env: process.env,
     serviceName: 'insomnia-db-process',
   });
@@ -75,7 +73,7 @@ export const initDatabaseBuckets: DatabaseBucketsFactory = async (
       dbConfig: defaultConfig,
       dbPath: process.env['INSOMNIA_DATA_PATH'] || electron.app.getPath('userData'),
     },
-    [port2],
+    [port2, dbPort],
   );
 
   const [promise, resolve, reject] = createPromiseResolvers();
@@ -156,21 +154,21 @@ export const initRenderProcessDatabaseConsumer = async () => {
   );
 };
 
-export const addUtilityProcessDatabaseConsumer = (consumerProcessesMainPort: MessagePortMain) => {
-  consumerProcessesMainPort.on('message', async event => {
-    const data = event.data;
-    const { channel, id, type, func, args } = data as {
-      channel?: string;
-      id: string;
-      type: keyof typeof bucketsProxy;
-      func: DatabaseBucketOperations;
-      args: any[];
-    };
-    if (channel === 'db' && id) {
-      console.debug('[debug]', '[main]', `onMessage [${channel}] from utility process`, id, Date.now());
-      const result = await (bucketsProxy[type][func] as any)(...args);
-      console.debug('[debug]', '[main]', `postMessage [${channel}] to utility process`, id, Date.now());
-      consumerProcessesMainPort.postMessage({ type: 'response', id, result, channel });
-    }
-  });
-};
+// export const addUtilityProcessDatabaseConsumer = (consumerProcessesMainPort: MessagePortMain) => {
+//   consumerProcessesMainPort.on('message', async event => {
+//     const data = event.data;
+//     const { channel, id, type, func, args } = data as {
+//       channel?: string;
+//       id: string;
+//       type: keyof typeof bucketsProxy;
+//       func: DatabaseBucketOperations;
+//       args: any[];
+//     };
+//     if (channel === 'db' && id) {
+//       console.debug('[debug]', '[main]', `onMessage [${channel}] from utility process`, id, Date.now());
+//       const result = await (bucketsProxy[type][func] as any)(...args);
+//       console.debug('[debug]', '[main]', `postMessage [${channel}] to utility process`, id, Date.now());
+//       consumerProcessesMainPort.postMessage({ type: 'response', id, result, channel });
+//     }
+//   });
+// };

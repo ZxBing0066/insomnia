@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import inspector from 'node:inspector';
 import path from 'node:path';
 
-import electron, { app, BrowserWindow, ipcMain, session } from 'electron';
+import electron, { app, BrowserWindow, ipcMain, MessageChannelMain, session } from 'electron';
 import contextMenu from 'electron-context-menu';
 import installExtension, { REACT_DEVELOPER_TOOLS } from 'electron-devtools-installer';
 
@@ -45,7 +45,8 @@ const dataPath =
 app.setPath('userData', dataPath);
 
 // Configure database client with main process factory
-configureInitDbBuckets(initDatabaseBuckets);
+const { port1: dbPort1, port2: dbPort2 } = new MessageChannelMain();
+configureInitDbBuckets(option => initDatabaseBuckets(option, dbPort2));
 initRenderProcessDatabaseConsumer();
 
 initializeLogging();
@@ -86,7 +87,7 @@ app.on('ready', async () => {
   registerCurlHandlers();
   registerMcpHandlers();
   registerSecretStorageHandlers();
-  initDemo();
+  initDemo(dbPort1);
 
   ipcMain.handle('demo.main.listProjects', async () => {
     console.debug('[debug]', '[main]', 'handle demo.main.listProjects', Date.now());
