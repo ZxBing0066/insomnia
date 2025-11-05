@@ -19,6 +19,11 @@ import orderedJSON from 'json-order';
 import { parseArgsStringToArgv } from 'string-argv';
 import { v4 as uuidv4 } from 'uuid';
 
+import { configureInitDbBuckets } from '~/common/database';
+import type { DatabaseBuckets } from '~/common/database/database-buckets';
+import { createDbBuckets } from '~/common/database/database-buckets';
+import type { DataBaseOptions } from '~/common/database/interface';
+
 import { type RequestTestResult } from '../../insomnia-scripting-environment/src/objects';
 import packageJson from '../package.json';
 import { exportSpecification, writeFileWithCliOptions } from './commands/export-specification';
@@ -34,6 +39,17 @@ import { matchIdIsh } from './db/models/util';
 import { loadWorkspace, promptWorkspace } from './db/models/workspace';
 import { logTestResult, logTestResultSummary, reporterTypes, type TestReporter } from './reporter';
 import { generateDocumentation } from './scripts/docs';
+
+configureInitDbBuckets(async (config: DataBaseOptions = {}) => {
+  const defaultConfig: DataBaseOptions = {
+    autoload: true,
+    corruptAlertThreshold: 0.9,
+    ...config,
+  };
+
+  const bucketsProxy: DatabaseBuckets = createDbBuckets(process.env['INSOMNIA_DATA_PATH'] || '', defaultConfig);
+  return bucketsProxy;
+});
 
 export interface GlobalOptions {
   ci: boolean;

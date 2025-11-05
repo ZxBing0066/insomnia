@@ -12,6 +12,8 @@ export interface ErrorMessage {
   error: string;
 }
 
+let counter = 0;
+
 process.parentPort.once('message', async message => {
   const { dbConfig: defaultConfig, dbPath } = message.data;
 
@@ -37,6 +39,8 @@ process.parentPort.once('message', async message => {
       try {
         const dbBucket = buckets[type];
         // console.log(type, func, ...args);
+        console.log('------------------', ++counter);
+
         const result = await (dbBucket[func] as any)(...args);
 
         console.debug('[debug]', '[db-process]', 'postMessage', id, Date.now());

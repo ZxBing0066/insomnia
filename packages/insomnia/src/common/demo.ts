@@ -12,7 +12,9 @@ export const initDemo = (dbPort: MessagePortMain) => {
   const { port1, port2 } = new MessageChannelMain();
   processPort = port1;
   demoProcess = utilityProcess.fork(path.join(__dirname, 'entry.demo-utility-process.min.js'), [], {
+    serviceName: 'demo-utility-process',
     env: process.env,
+    execArgv: process.env.NODE_ENV === 'development' ? ['--inspect=5862'] : [],
   });
   demoProcess.on('exit', code => {
     console.log('Demo utility process exited with code:', code);

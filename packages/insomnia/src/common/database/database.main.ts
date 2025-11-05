@@ -59,6 +59,7 @@ export const initDatabaseBuckets = async (config: DataBaseOptions = {}, dbPort: 
   dbProcess = utilityProcess.fork(path.join(__dirname, 'entry.db-process.min.js'), [], {
     env: process.env,
     serviceName: 'insomnia-db-process',
+    execArgv: process.env.NODE_ENV === 'development' ? ['--inspect=5860'] : [],
   });
   dbProcess.on('exit', (code: number) => {
     console.warn(`[debug] db process exited with code ${code}`);
